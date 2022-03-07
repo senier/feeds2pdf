@@ -1,4 +1,4 @@
-python-packages := rss2pdf
+python-packages := rss2pdf stubs
 
 check: check_black check_isort check_flake8 check_pylint check_mypy check_pydocstyle
 
@@ -15,7 +15,7 @@ check_pylint:
 	pylint $(python-packages)
 
 check_mypy:
-	mypy --pretty $(python-packages)
+	MYPYPATH=stubs mypy --pretty $(python-packages)
 
 check_pydocstyle:
 	pydocstyle $(python-packages)
@@ -26,3 +26,4 @@ format:
 
 install_devel:
 	$(MAKE) -C .config/python-style install_devel
+	python3 -m pip install -r requirements.txt
