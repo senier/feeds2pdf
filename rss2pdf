@@ -5,9 +5,20 @@ import time
 import urllib.request
 import xml.etree.ElementTree as ET
 from email.utils import parsedate
+from typing import List
 
 import pandoc
-from pandoc.types import Str  # pylint: disable=no-name-in-module
+from pandoc.types import (  # pylint: disable=no-name-in-module
+    Attr,
+    Block,
+    Header,
+    Link,
+    Meta,
+    Pandoc,
+    Para,
+    Space,
+    Str,
+)
 
 news = []
 
@@ -54,4 +65,32 @@ for url in config["urls"]:
                 news.append((date, chan_title.text, title, description, link))
 
 
-pandoc.write(Str("Hello"), file="News.pdf", format="pdf", options=["-V", "geometry:margin=0pt"])
+NO_ATTR: Attr = ("", [], [])
+
+content: List[Block] = [Header(1, ("top", [], []), [Str("News")])]
+
+for index, (date, chan, title, desc, link) in enumerate(reversed(sorted(news, key=lambda e: e[0]))):
+    assert title is not None
+    date_str = time.strftime("%a, %Y-%m-%d %H:%M", time.localtime(date))
+    content.append(Header(2, (f"{index}", [], []), [Str(title)]))
+    content.append(
+        Para(
+            [
+                Link(
+                    NO_ATTR,
+                    [Str(f"{chan},"), Space(), Str(f"{date_str}"), Space(), Str("[Top]")],
+                    ("#top", ""),
+                )
+            ]
+        )
+    )
+    if desc:
+        content.append(Para([Str(desc)]))
+
+doc = Pandoc(Meta({}), content)
+pandoc.write(
+    doc,
+    file="News.pdf",
+    format="pdf",
+    options=["-V", "geometry:margin=5pt", "--pdf-engine=xelatex"],
+)
