@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import datetime
 import time
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -24,6 +25,15 @@ from pandoc.types import (  # pylint: disable=no-name-in-module
 parser = argparse.ArgumentParser(description="Create PDF from RSS feeds")
 parser.add_argument(
     "-o", "--output", nargs=1, action="store", type=Path, required=True, help="output file"
+)
+parser.add_argument(
+    "-a",
+    "--age",
+    nargs=1,
+    action="store",
+    type=int,
+    default=24,
+    help="Maximum age (default: %(default)s)",
 )
 parser.add_argument("urls", nargs="+", action="store", help="RSS URLs to convert")
 args = parser.parse_args()
@@ -76,7 +86,13 @@ content: List[Block] = [Header(1, ("top", [], []), [Str("News")])]
 
 for index, (date, chan, title, desc, link) in enumerate(reversed(sorted(news, key=lambda e: e[0]))):
     assert title is not None
-    date_str = time.strftime("%a, %Y-%m-%d %H:%M", time.localtime(date))
+
+    entry_time = datetime.datetime.fromtimestamp(date)
+    age = datetime.datetime.now() - entry_time
+    if age > datetime.timedelta(hours=args.age[0]):
+        continue
+
+    date_str = entry_time.strftime("%a, %Y-%m-%d %H:%M")
     content.append(Header(2, (f"{index}", [], []), [Str(title)]))
     content.append(
         Para(
