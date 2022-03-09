@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
-import json
+import argparse
 import time
 import urllib.request
 import xml.etree.ElementTree as ET
 from email.utils import parsedate
+from pathlib import Path
 from typing import List
 
 import pandoc
@@ -20,12 +21,16 @@ from pandoc.types import (  # pylint: disable=no-name-in-module
     Str,
 )
 
+parser = argparse.ArgumentParser(description="Create PDF from RSS feeds")
+parser.add_argument(
+    "-o", "--output", nargs=1, action="store", type=Path, required=True, help="output file"
+)
+parser.add_argument("urls", nargs="+", action="store", help="RSS URLs to convert")
+args = parser.parse_args()
+
 news = []
 
-with open("rss2pdf.conf", "r", encoding="utf-8") as config_file:
-    config = json.load(config_file)
-
-for url in config["urls"]:
+for url in args.urls:
     headers = {
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 "
         "(KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11",
@@ -90,7 +95,7 @@ for index, (date, chan, title, desc, link) in enumerate(reversed(sorted(news, ke
 doc = Pandoc(Meta({}), content)
 pandoc.write(
     doc,
-    file="News.pdf",
+    file=args.output[0],
     format="pdf",
     options=["-V", "geometry:margin=5pt", "--pdf-engine=xelatex"],
 )

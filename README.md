@@ -1,11 +1,3 @@
-# Configuration file format
+# rss2pdf
 
-```json
-{
-   "urls": [
-      "https://first/rss/url",
-      "http://second/rss/url",
-      "..."
-   ]
-}
-```
+Convert RSS feed into e-reader compatible PDF.
