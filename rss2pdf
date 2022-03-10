@@ -116,7 +116,7 @@ for index, (date, chan, title, desc, link) in enumerate(reversed(sorted(news, ke
     request = urllib.request.Request(link, headers=HEADERS)
     try:
         with urllib.request.urlopen(request) as response:
-            article = Document(response.read())
+            article = Document(response.read().decode(response.headers.get_content_charset()))
             summary = article.summary()
             TITLE = article.title()
             converter = html2text.HTML2Text()
