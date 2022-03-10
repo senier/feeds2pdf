@@ -1,1 +1,3 @@
 pandoc
+readability-lxml
+html2text

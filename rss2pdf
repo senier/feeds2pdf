@@ -9,18 +9,36 @@ from email.utils import parsedate
 from pathlib import Path
 from typing import List
 
+import html2text
 import pandoc
 from pandoc.types import (  # pylint: disable=no-name-in-module
     Attr,
     Block,
+    Format,
     Header,
     Link,
     Meta,
     Pandoc,
     Para,
+    RawBlock,
     Space,
     Str,
 )
+from readability import Document  # type: ignore
+
+
+def lnk(text: str, target: str) -> Link:
+    return Link(NO_ATTR, [Str(text)], (f"#{target}", ""))
+
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 "
+    "(KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Encoding": "none",
+    "Accept-Language": "en-US,en;q=0.8",
+    "Connection": "keep-alive",
+}
 
 parser = argparse.ArgumentParser(description="Create PDF from RSS feeds")
 parser.add_argument(
@@ -32,7 +50,7 @@ parser.add_argument(
     nargs=1,
     action="store",
     type=int,
-    default=24,
+    default=[24],
     help="Maximum age (default: %(default)s)",
 )
 parser.add_argument("urls", nargs="+", action="store", help="RSS URLs to convert")
@@ -41,15 +59,7 @@ args = parser.parse_args()
 news = []
 
 for url in args.urls:
-    headers = {
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 "
-        "(KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Encoding": "none",
-        "Accept-Language": "en-US,en;q=0.8",
-        "Connection": "keep-alive",
-    }
-    request = urllib.request.Request(url, headers=headers)
+    request = urllib.request.Request(url, headers=HEADERS)
     with urllib.request.urlopen(request) as response:
         tree = ET.ElementTree(ET.fromstring(response.read()))
         for channel in tree.findall("./channel"):
@@ -61,7 +71,7 @@ for url in args.urls:
                         title = child.text
                     elif child.tag == "description":
                         description = child.text
-                    elif child.tag == "link":
+                    elif child.tag == "guid":
                         link = child.text
                     elif child.tag == "pubDate":
                         parsed_date = parsedate(child.text)
@@ -69,7 +79,7 @@ for url in args.urls:
                         date = time.mktime(parsed_date)
                     elif child.tag in (
                         "author",
-                        "guid",
+                        "link",
                         "enclosure",
                         "{http://purl.org/rss/1.0/modules/content/}encoded",
                         "category",
@@ -81,8 +91,10 @@ for url in args.urls:
 
 
 NO_ATTR: Attr = ("", [], [])
+TOP_LINK = Link(NO_ATTR, [Str("[Top]")], ("#top", ""))
 
 content: List[Block] = [Header(1, ("top", [], []), [Str("News")])]
+full: List[Block] = []
 
 for index, (date, chan, title, desc, link) in enumerate(reversed(sorted(news, key=lambda e: e[0]))):
     assert title is not None
@@ -93,25 +105,35 @@ for index, (date, chan, title, desc, link) in enumerate(reversed(sorted(news, ke
         continue
 
     date_str = entry_time.strftime("%a, %Y-%m-%d %H:%M")
-    content.append(Header(2, (f"{index}", [], []), [Str(title)]))
     content.append(
-        Para(
-            [
-                Link(
-                    NO_ATTR,
-                    [Str(f"{chan},"), Space(), Str(f"{date_str}"), Space(), Str("[Top]")],
-                    ("#top", ""),
-                )
-            ]
-        )
+        Header(1, (f"{index}", [], []), [Link(NO_ATTR, [Str(title)], (f"#{index}-full", ""))])
     )
+    content.append(Para([Str(f"{chan},"), Space(), Str(f"{date_str}"), Space(), TOP_LINK]))
     if desc:
         content.append(Para([Str(desc)]))
 
-doc = Pandoc(Meta({}), content)
+    assert link is not None
+    request = urllib.request.Request(link, headers=HEADERS)
+    try:
+        with urllib.request.urlopen(request) as response:
+            article = Document(response.read())
+            summary = article.summary()
+            TITLE = article.title()
+            converter = html2text.HTML2Text()
+            converter.ignore_images = True
+            converter.bypass_tables = False
+            doc = pandoc.read(converter.handle(summary))
+            full.append(RawBlock(Format("tex"), "\\newpage"))
+            full.append(Header(1, (f"{index}-full", [], []), [lnk(TITLE, str(index))]))
+            full.extend(doc[1])
+            full.append(Para([lnk("[Back]", str(index)), TOP_LINK]))
+    except urllib.error.HTTPError as e:
+        print(f"Error retrieving {link}: {e}")
+
+doc = Pandoc(Meta({}), content + full)
 pandoc.write(
     doc,
     file=args.output[0],
     format="pdf",
-    options=["-V", "geometry:margin=5pt", "--pdf-engine=xelatex"],
+    options=["-V", "geometry:margin=5pt", "-V", "papersize:a5", "--pdf-engine=xelatex"],
 )
