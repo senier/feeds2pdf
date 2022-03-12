@@ -14,7 +14,7 @@ Block = Union[Header, Para, RawBlock]
 
 Para = List[Inline]
 
-MetaValue = List[None]
+MetaValue = Union[MetaInlines]
 
 Meta = Dict[Text, MetaValue]
 
@@ -35,3 +35,6 @@ class Format(Str): ...
 
 class RawBlock:
     def __init__(self, fmt: Format, data: str): ...
+
+class MetaInlines:
+    def __init__(self, value: List[Inline]): ...

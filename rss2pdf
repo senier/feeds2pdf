@@ -7,7 +7,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from email.utils import parsedate
 from pathlib import Path
-from typing import List
+from typing import List, Optional, Set
 
 import html2text
 import pandoc
@@ -18,6 +18,7 @@ from pandoc.types import (  # pylint: disable=no-name-in-module
     Header,
     Link,
     Meta,
+    MetaInlines,
     Pandoc,
     Para,
     RawBlock,
@@ -71,7 +72,7 @@ for url in args.urls:
                         title = child.text
                     elif child.tag == "description":
                         description = child.text
-                    elif child.tag == "guid":
+                    elif child.tag == "link":
                         link = child.text
                     elif child.tag == "pubDate":
                         parsed_date = parsedate(child.text)
@@ -79,9 +80,10 @@ for url in args.urls:
                         date = time.mktime(parsed_date)
                     elif child.tag in (
                         "author",
-                        "link",
+                        "guid",
                         "enclosure",
                         "{http://purl.org/rss/1.0/modules/content/}encoded",
+                        "{http://purl.org/dc/elements/1.1/}creator",
                         "category",
                     ):
                         pass
@@ -96,13 +98,25 @@ TOP_LINK = Link(NO_ATTR, [Str("[Top]")], ("#top", ""))
 content: List[Block] = [Header(1, ("top", [], []), [Str("News")])]
 full: List[Block] = []
 
+channels: Set[str] = set()
+start: Optional[datetime.datetime] = None
+end: Optional[datetime.datetime] = None
+
 for index, (date, chan, title, desc, link) in enumerate(reversed(sorted(news, key=lambda e: e[0]))):
     assert title is not None
+
+    if chan is not None:
+        channels.add(chan)
 
     entry_time = datetime.datetime.fromtimestamp(date)
     age = datetime.datetime.now() - entry_time
     if age > datetime.timedelta(hours=args.age[0]):
         continue
+
+    if start is None or start > entry_time:
+        start = entry_time
+    if end is None or end < entry_time:
+        end = entry_time
 
     date_str = entry_time.strftime("%a, %Y-%m-%d %H:%M")
     content.append(
@@ -127,10 +141,21 @@ for index, (date, chan, title, desc, link) in enumerate(reversed(sorted(news, ke
             full.append(Header(1, (f"{index}-full", [], []), [lnk(TITLE, str(index))]))
             full.extend(doc[1])
             full.append(Para([lnk("[Back]", str(index)), TOP_LINK]))
-    except urllib.error.HTTPError as e:
+    except (urllib.error.HTTPError, urllib.error.URLError) as e:
         print(f"Error retrieving {link}: {e}")
 
-doc = Pandoc(Meta({}), content + full)
+title_str = (
+    "News"
+    if start is None or end is None
+    else f"{start.strftime('%a, %d.%m. %H:%M')} - {end.strftime('%a, %d.%m. %H:%M')}"
+)
+
+doc = Pandoc(
+    Meta(
+        {"title": MetaInlines([Str(" | ".join(channels))]), "author": MetaInlines([Str(title_str)])}
+    ),
+    content + full,
+)
 pandoc.write(
     doc,
     file=args.output[0],

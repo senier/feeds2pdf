@@ -5,7 +5,7 @@ with open("README.md", encoding="utf-8") as f:
 
 setup(
     name="rss2pdf",
-    version="0.1.0",
+    version="0.1.1",
     description="Convert RSS feed into e-reader compatible PDF",
     long_description=readme,
     long_description_content_type="text/markdown",
