@@ -32,6 +32,8 @@ def lnk(text: str, target: str) -> Link:
     return Link(NO_ATTR, [Str(text)], (f"#{target}", ""))
 
 
+MIN_ARTICLE_LEN = 500
+
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 "
     "(KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11",
@@ -78,71 +80,87 @@ for url in args.urls:
                         parsed_date = parsedate(child.text)
                         assert parsed_date is not None
                         date = time.mktime(parsed_date)
+                    elif child.tag == "guid":
+                        guid = child.text
                     elif child.tag in (
                         "author",
-                        "guid",
-                        "enclosure",
-                        "{http://purl.org/rss/1.0/modules/content/}encoded",
-                        "{http://purl.org/dc/elements/1.1/}creator",
                         "category",
+                        "comments",
+                        "enclosure",
+                        "{http://purl.org/dc/elements/1.1/}creator",
+                        "{http://purl.org/rss/1.0/modules/content/}encoded",
+                        "{http://purl.org/rss/1.0/modules/slash/}comments",
                     ):
                         pass
                     else:
                         print(f"Unknown: {child.tag} - {child.text}")
-                news.append((date, chan_title.text, title, description, link))
+                news.append((date, chan_title.text, title, description, link, guid))
 
 
 NO_ATTR: Attr = ("", [], [])
 TOP_LINK = Link(NO_ATTR, [Str("[Top]")], ("#top", ""))
 
 content: List[Block] = [Header(1, ("top", [], []), [Str("News")])]
+seen: Set[str] = set()
 full: List[Block] = []
 
 channels: Set[str] = set()
 start: Optional[datetime.datetime] = None
 end: Optional[datetime.datetime] = None
+has_content: bool = False
 
-for index, (date, chan, title, desc, link) in enumerate(reversed(sorted(news, key=lambda e: e[0]))):
+for index, (date, chan, title, desc, link, guid) in enumerate(
+    reversed(sorted(news, key=lambda e: e[0]))
+):
     assert title is not None
-
-    if chan is not None:
-        channels.add(chan)
 
     entry_time = datetime.datetime.fromtimestamp(date)
     age = datetime.datetime.now() - entry_time
     if age > datetime.timedelta(hours=args.age[0]):
         continue
 
-    if start is None or start > entry_time:
-        start = entry_time
-    if end is None or end < entry_time:
-        end = entry_time
+    if guid in seen:
+        continue
 
-    date_str = entry_time.strftime("%a, %Y-%m-%d %H:%M")
-    content.append(
-        Header(1, (f"{index}", [], []), [Link(NO_ATTR, [Str(title)], (f"#{index}-full", ""))])
-    )
-    content.append(Para([Str(f"{chan},"), Space(), Str(f"{date_str}"), Space(), TOP_LINK]))
-    if desc:
-        content.append(Para([Str(desc)]))
+    if guid is not None:
+        seen.add(guid)
 
     assert link is not None
     request = urllib.request.Request(link, headers=HEADERS)
     try:
         with urllib.request.urlopen(request) as response:
-            article = Document(response.read().decode(response.headers.get_content_charset()))
+            charset = response.headers.get_content_charset() or "utf-8"
+            article = Document(response.read().decode(charset))
             summary = article.summary()
             TITLE = article.title()
             converter = html2text.HTML2Text()
             converter.ignore_images = True
             converter.bypass_tables = False
-            doc = pandoc.read(converter.handle(summary))
-            full.append(RawBlock(Format("tex"), "\\newpage"))
-            full.append(Header(1, (f"{index}-full", [], []), [lnk(TITLE, str(index))]))
-            full.extend(doc[1])
-            full.append(Para([lnk("[Back]", str(index)), TOP_LINK]))
+            doc_text = converter.handle(summary)
+            if len(doc_text) > MIN_ARTICLE_LEN:
+                has_content = True  # pylint: disable=invalid-name
+                doc = pandoc.read(doc_text)
+                full.append(RawBlock(Format("tex"), "\\newpage"))
+                full.append(Header(1, (f"{index}-full", [], []), [lnk(TITLE, str(index))]))
+                full.extend(doc[1])
+                full.append(Para([lnk("[Back]", str(index)), TOP_LINK]))
     except (urllib.error.HTTPError, urllib.error.URLError) as e:
         print(f"Error retrieving {link}: {e}")
+
+    if has_content:
+        if chan is not None:
+            channels.add(chan)
+        if start is None or start > entry_time:
+            start = entry_time
+        if end is None or end < entry_time:
+            end = entry_time
+        date_str = entry_time.strftime("%a, %Y-%m-%d %H:%M")
+        content.append(
+            Header(1, (f"{index}", [], []), [Link(NO_ATTR, [Str(title)], (f"#{index}-full", ""))])
+        )
+        content.append(Para([Str(f"{chan},"), Space(), Str(f"{date_str}"), Space(), TOP_LINK]))
+        if desc:
+            content.append(Para([Str(desc)]))
 
 title_str = (
     "News"
