@@ -1,3 +1,3 @@
-# rss2pdf
+# feeds2pdf
 
-Convert RSS feed into e-reader compatible PDF.
+Convert RSS/Atom feeds into a single e-reader compatible PDF.

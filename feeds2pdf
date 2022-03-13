@@ -6,12 +6,11 @@ import math
 import sys
 import time
 import urllib.request
-import xml.etree.ElementTree as ET
 from collections import Counter
-from email.utils import parsedate
 from pathlib import Path
 from typing import List, Optional, Set
 
+import feedparser  # type: ignore
 import html2text
 import pandoc
 from pandoc.types import (  # pylint: disable=no-name-in-module
@@ -75,43 +74,29 @@ news = []
 
 for url in args.urls:
     print(f"Retrieving RSS from {url}")
-    request = urllib.request.Request(url, headers=HEADERS)
-    try:
-        with urllib.request.urlopen(request) as response:
-            tree = ET.ElementTree(ET.fromstring(response.read()))
-            for channel in tree.findall("./channel"):
-                chan_title = channel.find("title")
-                assert chan_title is not None
-                for item in channel.findall("./item"):
-                    for child in item:
-                        text = child.text.strip(" \n") if child.text else None
-                        if child.tag == "title":
-                            title = text
-                        elif child.tag == "description":
-                            description = text
-                        elif child.tag == "link":
-                            link = text
-                        elif child.tag == "pubDate":
-                            parsed_date = parsedate(text)
-                            if parsed_date:
-                                date = datetime.datetime.fromtimestamp(
-                                    time.mktime(parsed_date)
-                                ).replace(tzinfo=datetime.timezone.utc)
-                            else:
-                                assert text is not None
-                                date = datetime.datetime.strptime(
-                                    text, "%Y-%m-%d %H:%M:%S"
-                                ).astimezone()
-                        elif child.tag == "pubdate":
-                            assert text is not None
-                            date = datetime.datetime.strptime(
-                                text, "%Y-%m-%dT%H:%M:%S.000%z"
-                            ).astimezone()
-                        elif child.tag == "guid":
-                            guid = text
-                    news.append((date, chan_title.text, title, description, link, guid or link))
-    except urllib.error.HTTPError as e:
-        print(f"Error connecting to {url}: {e}")
+    doc = feedparser.parse(url)
+    for entry in doc.entries:
+
+        if "updated_parsed" in entry:
+            date_parsed = entry.updated_parsed
+        elif "published_parsed" in entry:
+            date_parsed = entry.published_parsed
+        elif "created_parsed" in entry:
+            date_parsed = entry.created_parsed
+        assert date_parsed is not None
+
+        news.append(
+            (
+                datetime.datetime.fromtimestamp(time.mktime(date_parsed)).replace(
+                    tzinfo=datetime.timezone.utc
+                ),
+                doc.feed.title,
+                entry.title,
+                entry.description if "description" in entry else None,
+                entry.link.encode("ascii", "ignore").decode("ascii"),
+                entry.id if "id" in entry else entry.link,
+            )
+        )
 
 
 NO_ATTR: Attr = ("", [], [])
@@ -126,7 +111,7 @@ start: Optional[datetime.datetime] = None
 end: Optional[datetime.datetime] = None
 has_content: bool = False
 
-for index, (date, chan, title, desc, link, guid) in enumerate(
+for index, (date, chan, title, desc, location, eid) in enumerate(
     reversed(sorted(news, key=lambda e: e[0]))
 ):
     assert title is not None
@@ -135,16 +120,15 @@ for index, (date, chan, title, desc, link, guid) in enumerate(
     if age > datetime.timedelta(hours=args.age[0]):
         continue
 
-    if guid in seen:
+    if eid in seen:
         continue
 
-    if guid is not None:
-        seen.add(guid)
+    if location is not None:
+        seen.add(eid)
 
-    print(f"Retrieving article {guid}")
+    print(f"Retrieving article {location}")
 
-    assert link is not None
-    request = urllib.request.Request(link, headers=HEADERS)
+    request = urllib.request.Request(location, headers=HEADERS)
     try:
         with urllib.request.urlopen(request) as response:
             charset = response.headers.get_content_charset() or "utf-8"
@@ -165,7 +149,7 @@ for index, (date, chan, title, desc, link, guid) in enumerate(
                 full.append(RawBlock(Format("tex"), "\\end{multicols}"))
                 full.append(Para([lnk("[Back]", str(index)), TOP_LINK]))
     except (urllib.error.HTTPError, urllib.error.URLError) as e:
-        print(f"Error retrieving {link}: {e}")
+        print(f"Error retrieving {location}: {e}")
 
     if has_content:
         if chan is not None:
