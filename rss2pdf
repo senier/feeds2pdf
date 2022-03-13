@@ -2,9 +2,11 @@
 
 import argparse
 import datetime
+import math
 import time
 import urllib.request
 import xml.etree.ElementTree as ET
+from collections import Counter
 from email.utils import parsedate
 from pathlib import Path
 from typing import List, Optional, Set
@@ -34,7 +36,14 @@ def lnk(text: str, target: str) -> Link:
     return Link(NO_ATTR, [Str(text)], (f"#{target}", ""))
 
 
+# https://rosettacode.org/wiki/Entropy#Python:_More_succinct_version
+def entropy(s: str):
+    p, lns = Counter(s), float(len(s))
+    return -sum(count / lns * math.log(count / lns, 2) for count in p.values())
+
+
 MIN_ARTICLE_LEN = 500
+MAX_ARTICLE_ENTROPY = 5.05
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 "
@@ -100,9 +109,9 @@ for url in args.urls:
 
 
 NO_ATTR: Attr = ("", [], [])
-TOP_LINK = Link(NO_ATTR, [Str("[Top]")], ("#top", ""))
+TOP_LINK = Link(NO_ATTR, [Str("[Top]")], ("#0", ""))
 
-content: List[Block] = [Header(1, ("top", [], []), [Str("News")])]
+content: List[Block] = []
 seen: Set[str] = set()
 full: List[Block] = []
 
@@ -139,7 +148,7 @@ for index, (date, chan, title, desc, link, guid) in enumerate(
             converter.ignore_images = True
             converter.bypass_tables = True
             doc_text = converter.handle(summary)
-            if len(doc_text) > MIN_ARTICLE_LEN:
+            if len(doc_text) > MIN_ARTICLE_LEN and entropy(doc_text) <= MAX_ARTICLE_ENTROPY:
                 has_content = True  # pylint: disable=invalid-name
                 doc = pandoc.read(doc_text)
                 full.append(RawBlock(Format("tex"), "\\newpage"))
@@ -167,6 +176,8 @@ for index, (date, chan, title, desc, link, guid) in enumerate(
             content.append(RawBlock(Format("tex"), "\\begin{multicols}{2}"))
             content.append(Para([Str(desc)]))
             content.append(RawBlock(Format("tex"), "\\end{multicols}"))
+
+    has_content = False  # pylint: disable=invalid-name
 
 title_str = (
     "News"
