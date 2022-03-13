@@ -18,7 +18,9 @@ from pandoc.types import (  # pylint: disable=no-name-in-module
     Header,
     Link,
     Meta,
+    MetaBlocks,
     MetaInlines,
+    MetaList,
     Pandoc,
     Para,
     RawBlock,
@@ -135,14 +137,16 @@ for index, (date, chan, title, desc, link, guid) in enumerate(
             TITLE = article.title()
             converter = html2text.HTML2Text()
             converter.ignore_images = True
-            converter.bypass_tables = False
+            converter.bypass_tables = True
             doc_text = converter.handle(summary)
             if len(doc_text) > MIN_ARTICLE_LEN:
                 has_content = True  # pylint: disable=invalid-name
                 doc = pandoc.read(doc_text)
                 full.append(RawBlock(Format("tex"), "\\newpage"))
                 full.append(Header(1, (f"{index}-full", [], []), [lnk(TITLE, str(index))]))
+                full.append(RawBlock(Format("tex"), "\\begin{multicols}{2}"))
                 full.extend(doc[1])
+                full.append(RawBlock(Format("tex"), "\\end{multicols}"))
                 full.append(Para([lnk("[Back]", str(index)), TOP_LINK]))
     except (urllib.error.HTTPError, urllib.error.URLError) as e:
         print(f"Error retrieving {link}: {e}")
@@ -160,7 +164,9 @@ for index, (date, chan, title, desc, link, guid) in enumerate(
         )
         content.append(Para([Str(f"{chan},"), Space(), Str(f"{date_str}"), Space(), TOP_LINK]))
         if desc:
+            content.append(RawBlock(Format("tex"), "\\begin{multicols}{2}"))
             content.append(Para([Str(desc)]))
+            content.append(RawBlock(Format("tex"), "\\end{multicols}"))
 
 title_str = (
     "News"
@@ -170,13 +176,16 @@ title_str = (
 
 doc = Pandoc(
     Meta(
-        {"title": MetaInlines([Str(" | ".join(channels))]), "author": MetaInlines([Str(title_str)])}
+        {
+            "title": MetaInlines([Str(" | ".join(channels))]),
+            "author": MetaInlines([Str(title_str)]),
+            "papersize": MetaInlines([Str("a5")]),
+            "geometry": MetaInlines([Str("margin=5pt")]),
+            "header-includes": MetaList(
+                [MetaBlocks([RawBlock(Format("tex"), "\\usepackage{multicol}")])]
+            ),
+        }
     ),
     content + full,
 )
-pandoc.write(
-    doc,
-    file=args.output[0],
-    format="pdf",
-    options=["-V", "geometry:margin=5pt", "-V", "papersize:a5", "--pdf-engine=xelatex"],
-)
+pandoc.write(doc, file=args.output[0], format="pdf", options=["--pdf-engine=xelatex"])
