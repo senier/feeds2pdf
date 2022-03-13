@@ -3,6 +3,7 @@
 import argparse
 import datetime
 import math
+import sys
 import time
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -32,13 +33,13 @@ from pandoc.types import (  # pylint: disable=no-name-in-module
 from readability import Document  # type: ignore
 
 
-def lnk(text: str, target: str) -> Link:
-    return Link(NO_ATTR, [Str(text)], (f"#{target}", ""))
+def lnk(data: str, target: str) -> Link:
+    return Link(NO_ATTR, [Str(data)], (f"#{target}", ""))
 
 
 # https://rosettacode.org/wiki/Entropy#Python:_More_succinct_version
-def entropy(s: str):
-    p, lns = Counter(s), float(len(s))
+def entropy(data: str) -> float:
+    p, lns = Counter(data), float(len(data))
     return -sum(count / lns * math.log(count / lns, 2) for count in p.values())
 
 
@@ -73,39 +74,44 @@ args = parser.parse_args()
 news = []
 
 for url in args.urls:
+    print(f"Retrieving RSS from {url}")
     request = urllib.request.Request(url, headers=HEADERS)
-    with urllib.request.urlopen(request) as response:
-        tree = ET.ElementTree(ET.fromstring(response.read()))
-        for channel in tree.findall("./channel"):
-            chan_title = channel.find("title")
-            assert chan_title is not None
-            for item in channel.findall("./item"):
-                for child in item:
-                    if child.tag == "title":
-                        title = child.text
-                    elif child.tag == "description":
-                        description = child.text
-                    elif child.tag == "link":
-                        link = child.text
-                    elif child.tag == "pubDate":
-                        parsed_date = parsedate(child.text)
-                        assert parsed_date is not None
-                        date = time.mktime(parsed_date)
-                    elif child.tag == "guid":
-                        guid = child.text
-                    elif child.tag in (
-                        "author",
-                        "category",
-                        "comments",
-                        "enclosure",
-                        "{http://purl.org/dc/elements/1.1/}creator",
-                        "{http://purl.org/rss/1.0/modules/content/}encoded",
-                        "{http://purl.org/rss/1.0/modules/slash/}comments",
-                    ):
-                        pass
-                    else:
-                        print(f"Unknown: {child.tag} - {child.text}")
-                news.append((date, chan_title.text, title, description, link, guid))
+    try:
+        with urllib.request.urlopen(request) as response:
+            tree = ET.ElementTree(ET.fromstring(response.read()))
+            for channel in tree.findall("./channel"):
+                chan_title = channel.find("title")
+                assert chan_title is not None
+                for item in channel.findall("./item"):
+                    for child in item:
+                        text = child.text.strip(" \n") if child.text else None
+                        if child.tag == "title":
+                            title = text
+                        elif child.tag == "description":
+                            description = text
+                        elif child.tag == "link":
+                            link = text
+                        elif child.tag == "pubDate":
+                            parsed_date = parsedate(text)
+                            if parsed_date:
+                                date = datetime.datetime.fromtimestamp(
+                                    time.mktime(parsed_date)
+                                ).replace(tzinfo=datetime.timezone.utc)
+                            else:
+                                assert text is not None
+                                date = datetime.datetime.strptime(
+                                    text, "%Y-%m-%d %H:%M:%S"
+                                ).astimezone()
+                        elif child.tag == "pubdate":
+                            assert text is not None
+                            date = datetime.datetime.strptime(
+                                text, "%Y-%m-%dT%H:%M:%S.000%z"
+                            ).astimezone()
+                        elif child.tag == "guid":
+                            guid = text
+                    news.append((date, chan_title.text, title, description, link, guid or link))
+    except urllib.error.HTTPError as e:
+        print(f"Error connecting to {url}: {e}")
 
 
 NO_ATTR: Attr = ("", [], [])
@@ -125,8 +131,7 @@ for index, (date, chan, title, desc, link, guid) in enumerate(
 ):
     assert title is not None
 
-    entry_time = datetime.datetime.fromtimestamp(date)
-    age = datetime.datetime.now() - entry_time
+    age = datetime.datetime.now().replace(tzinfo=datetime.timezone.utc) - date
     if age > datetime.timedelta(hours=args.age[0]):
         continue
 
@@ -135,6 +140,8 @@ for index, (date, chan, title, desc, link, guid) in enumerate(
 
     if guid is not None:
         seen.add(guid)
+
+    print(f"Retrieving article {guid}")
 
     assert link is not None
     request = urllib.request.Request(link, headers=HEADERS)
@@ -163,11 +170,11 @@ for index, (date, chan, title, desc, link, guid) in enumerate(
     if has_content:
         if chan is not None:
             channels.add(chan)
-        if start is None or start > entry_time:
-            start = entry_time
-        if end is None or end < entry_time:
-            end = entry_time
-        date_str = entry_time.strftime("%a, %Y-%m-%d %H:%M")
+        if start is None or start > date:
+            start = date
+        if end is None or end < date:
+            end = date
+        date_str = date.strftime("%a, %Y-%m-%d %H:%M")
         content.append(
             Header(1, (f"{index}", [], []), [Link(NO_ATTR, [Str(title)], (f"#{index}-full", ""))])
         )
@@ -185,6 +192,12 @@ title_str = (
     else f"{start.strftime('%a, %d.%m. %H:%M')} - {end.strftime('%a, %d.%m. %H:%M')}"
 )
 
+content += full
+
+if not content:
+    print("No content")
+    sys.exit(1)
+
 doc = Pandoc(
     Meta(
         {
@@ -197,6 +210,6 @@ doc = Pandoc(
             ),
         }
     ),
-    content + full,
+    content,
 )
 pandoc.write(doc, file=args.output[0], format="pdf", options=["--pdf-engine=xelatex"])
