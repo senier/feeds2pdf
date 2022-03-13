@@ -8,7 +8,7 @@ Target = Tuple[Text, Text]
 
 Attr = Tuple[Text, List[Text], List[Tuple[Text, Text]]]
 
-Inline = Union[Link, Space, Str]
+Inline = Union[Link, Space, Str, Emph]
 
 Block = Union[Header, Para, RawBlock]
 
@@ -44,3 +44,6 @@ class MetaBlocks:
 
 class MetaList:
     def __init__(self, value: List[MetaValue]): ...
+
+class Emph:
+    def __init__(self, value: List[Inline]): ...

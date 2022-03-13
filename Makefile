@@ -1,4 +1,4 @@
-python-packages := rss2pdf stubs
+python-packages := feeds2pdf stubs
 
 check: check_black check_isort check_flake8 check_pylint check_mypy check_pydocstyle
 
@@ -26,4 +26,4 @@ format:
 
 install_devel:
 	$(MAKE) -C .config/python-style install_devel
-	python3 -m pip install .
+	python3 -m pip install -e .
