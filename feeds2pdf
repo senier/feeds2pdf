@@ -87,7 +87,7 @@ for url in args.urls:
     for entry in doc.entries:
 
         tags = [tag.term for tag in entry.tags] if "tags" in entry else []
-        if any(tag in args.filter[0] for tag in tags):
+        if args.filter and any(tag in args.filter[0] for tag in tags):
             continue
 
         if "updated_parsed" in entry:
