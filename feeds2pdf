@@ -220,7 +220,11 @@ doc = Pandoc(
             "papersize": MetaInlines([Str("a5")]),
             "geometry": MetaInlines([Str("margin=5pt")]),
             "header-includes": MetaList(
-                [MetaBlocks([RawBlock(Format("tex"), "\\usepackage{multicol}")])]
+                [
+                    MetaBlocks([RawBlock(Format("tex"), "\\usepackage{multicol}")]),
+                    MetaBlocks([RawBlock(Format("tex"), "\\setlength{\\columnseprule}{0.4pt}")]),
+                    MetaBlocks([RawBlock(Format("tex"), "\\setlength{\\columnsep}{2em}")]),
+                ],
             ),
         }
     ),
