@@ -43,6 +43,11 @@ def entropy(data: str) -> float:
     return -sum(count / lns * math.log(count / lns, 2) for count in p.values())
 
 
+def status(omit: bool, message: str, end: str = "\n", flush: bool = False) -> None:
+    if not omit:
+        print(message, end=end, flush=flush)
+
+
 MIN_ARTICLE_LEN = 500
 MAX_ARTICLE_ENTROPY = 5.05
 
@@ -76,13 +81,19 @@ parser.add_argument(
     type=str,
     help="Filter articles mating tag",
 )
+parser.add_argument(
+    "-q",
+    "--quiet",
+    action="store_true",
+    help="Suppress all regular output",
+)
 parser.add_argument("urls", nargs="+", action="store", help="RSS URLs to convert")
 args = parser.parse_args()
 
 news = []
 
 for url in args.urls:
-    print(f"Retrieving feed from {url}")
+    status(args.quiet, f"Retrieving feed from {url}")
     doc = feedparser.parse(url)
     for entry in doc.entries:
 
@@ -121,12 +132,12 @@ seen: Set[str] = set()
 full: List[Block] = []
 
 channels: Set[str] = set()
-start: Optional[datetime.datetime] = None
-end: Optional[datetime.datetime] = None
+start_time: Optional[datetime.datetime] = None
+end_time: Optional[datetime.datetime] = None
 has_content: bool = False
 index = 0  # pylint: disable=invalid-name
 
-print("Fetching articles ")
+status(args.quiet, "Fetching articles ")
 
 for date, chan, title, desc, location, eid, tags in reversed(sorted(news, key=lambda e: e[0])):
     assert title is not None
@@ -141,7 +152,7 @@ for date, chan, title, desc, location, eid, tags in reversed(sorted(news, key=la
     if location is not None:
         seen.add(eid)
 
-    print(".", end="", flush=True)
+    status(args.quiet, ".", end="", flush=True)
 
     request = urllib.request.Request(location, headers=HEADERS)
     try:
@@ -164,15 +175,15 @@ for date, chan, title, desc, location, eid, tags in reversed(sorted(news, key=la
                 full.append(RawBlock(Format("tex"), "\\end{multicols}"))
                 full.append(Para([lnk("[Back]", str(index)), TOP_LINK]))
     except (urllib.error.HTTPError, urllib.error.URLError):
-        print("E", end="", flush=True)
+        status(args.quiet, "E", end="", flush=True)
 
     if has_content:
         if chan is not None:
             channels.add(chan)
-        if start is None or start > date:
-            start = date
-        if end is None or end < date:
-            end = date
+        if start_time is None or start_time > date:
+            start_time = date
+        if end_time is None or end_time < date:
+            end_time = date
         date_str = date.strftime("%a, %Y-%m-%d %H:%M")
         content.append(
             Header(1, (f"{index}", [], []), [Link(NO_ATTR, [Str(title)], (f"#{index}-full", ""))])
@@ -198,18 +209,18 @@ for date, chan, title, desc, location, eid, tags in reversed(sorted(news, key=la
 
     has_content = False  # pylint: disable=invalid-name
 
-print(" done")
+status(args.quiet, " done")
 
 title_str = (
     "News"
-    if start is None or end is None
-    else f"{start.strftime('%a, %d.%m. %H:%M')} - {end.strftime('%a, %d.%m. %H:%M')}"
+    if start_time is None or end_time is None
+    else f"{start_time.strftime('%a, %d.%m. %H:%M')} - {end_time.strftime('%a, %d.%m. %H:%M')}"
 )
 
 content += full
 
 if not content:
-    print("No content")
+    status(args.quiet, "No content")
     sys.exit(1)
 
 doc = Pandoc(
