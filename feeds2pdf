@@ -152,6 +152,7 @@ for date, chan, title, desc, location, eid, tags in reversed(sorted(news, key=la
     if location is not None:
         seen.add(eid)
 
+    source_link = Link(NO_ATTR, [Str("[Source]")], (location, ""))
     status(args.quiet, ".", end="", flush=True)
 
     request = urllib.request.Request(location, headers=HEADERS)
@@ -173,7 +174,7 @@ for date, chan, title, desc, location, eid, tags in reversed(sorted(news, key=la
                 full.append(RawBlock(Format("tex"), "\\begin{multicols}{2}"))
                 full.extend(doc[1])
                 full.append(RawBlock(Format("tex"), "\\end{multicols}"))
-                full.append(Para([lnk("[Back]", str(index)), TOP_LINK]))
+                full.append(Para([lnk("[Back]", str(index)), TOP_LINK, source_link]))
     except (urllib.error.HTTPError, urllib.error.URLError):
         status(args.quiet, "E", end="", flush=True)
 
@@ -192,6 +193,8 @@ for date, chan, title, desc, location, eid, tags in reversed(sorted(news, key=la
             Para(
                 [
                     TOP_LINK,
+                    Space(),
+                    source_link,
                     Space(),
                     Str(f"{chan},"),
                     Space(),
