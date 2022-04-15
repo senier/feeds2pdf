@@ -5,7 +5,7 @@ with open("README.md", encoding="utf-8") as f:
 
 setup(
     name="feeds2pdf",
-    version="0.1.6",
+    version="0.1.7",
     description="Convert RSS/Atom feeds into a single e-reader compatible PDF",
     long_description=readme,
     long_description_content_type="text/markdown",
