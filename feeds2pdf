@@ -137,13 +137,13 @@ end_time: Optional[datetime.datetime] = None
 has_content: bool = False
 index = 0  # pylint: disable=invalid-name
 
-status(args.quiet, "Fetching articles ")
+status(args.quiet, f"Fetching max. {len(news)} articles ")
 
 for date, chan, title, desc, location, eid, tags in reversed(sorted(news, key=lambda e: e[0])):
     assert title is not None
 
     age = datetime.datetime.now().replace(tzinfo=datetime.timezone.utc) - date
-    if age > datetime.timedelta(hours=args.age[0]):
+    if args.age[0] > 0 and age > datetime.timedelta(hours=args.age[0]):
         continue
 
     if eid in seen:
@@ -159,7 +159,7 @@ for date, chan, title, desc, location, eid, tags in reversed(sorted(news, key=la
     try:
         with urllib.request.urlopen(request) as response:
             charset = response.headers.get_content_charset() or "utf-8"
-            article = Document(response.read().decode(charset))
+            article = Document(response.read().decode(charset), url=location)
             summary = article.summary()
             TITLE = article.title()
             converter = html2text.HTML2Text()
