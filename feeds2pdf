@@ -37,15 +37,30 @@ def lnk(data: str, target: str) -> Link:
     return Link(NO_ATTR, [Str(data)], (f"#{target}", ""))
 
 
-# https://rosettacode.org/wiki/Entropy#Python:_More_succinct_version
-def entropy(data: str) -> float:
-    p, lns = Counter(data), float(len(data))
-    return -sum(count / lns * math.log(count / lns, 2) for count in p.values())
-
-
 def status(omit: bool, message: str, end: str = "\n", flush: bool = False) -> None:
     if not omit:
         print(message, end=end, flush=flush)
+
+
+def convert(text: str, min_len: int = None, max_entropy: float = None) -> List[Block]:
+
+    # https://rosettacode.org/wiki/Entropy#Python:_More_succinct_version
+    def entropy(data: str) -> float:
+        p, lns = Counter(data), float(len(data))
+        return -sum(count / lns * math.log(count / lns, 2) for count in p.values())
+
+    converter = html2text.HTML2Text()
+    converter.ignore_images = True
+    converter.bypass_tables = True
+    raw_text = converter.handle(text)
+
+    if min_len and len(raw_text) <= min_len:
+        return []
+
+    if max_entropy and entropy(raw_text) > max_entropy:
+        return []
+
+    return pandoc.read(raw_text)[1]
 
 
 MIN_ARTICLE_LEN = 500
@@ -162,17 +177,13 @@ for date, chan, title, desc, location, eid, tags in reversed(sorted(news, key=la
             article = Document(response.read().decode(charset), url=location)
             summary = article.summary()
             TITLE = article.title()
-            converter = html2text.HTML2Text()
-            converter.ignore_images = True
-            converter.bypass_tables = True
-            doc_text = converter.handle(summary)
-            if len(doc_text) > MIN_ARTICLE_LEN and entropy(doc_text) <= MAX_ARTICLE_ENTROPY:
+            summary_md = convert(summary, min_len=MIN_ARTICLE_LEN, max_entropy=MAX_ARTICLE_ENTROPY)
+            if summary_md:
                 has_content = True  # pylint: disable=invalid-name
-                doc = pandoc.read(doc_text)
                 full.append(RawBlock(Format("tex"), "\\newpage"))
                 full.append(Header(1, (f"{index}-full", [], []), [lnk(TITLE, str(index))]))
                 full.append(RawBlock(Format("tex"), "\\begin{multicols}{2}"))
-                full.extend(doc[1])
+                full.extend(summary_md)
                 full.append(RawBlock(Format("tex"), "\\end{multicols}"))
                 full.append(Para([lnk("[Back]", str(index)), TOP_LINK, source_link]))
     except (urllib.error.HTTPError, urllib.error.URLError):
