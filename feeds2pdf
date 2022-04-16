@@ -42,7 +42,9 @@ def status(omit: bool, message: str, end: str = "\n", flush: bool = False) -> No
         print(message, end=end, flush=flush)
 
 
-def convert(text: str, min_len: int = None, max_entropy: float = None) -> List[Block]:
+def convert(
+    text: str, min_len: int = None, max_len: int = None, max_entropy: float = None
+) -> List[Block]:
 
     # https://rosettacode.org/wiki/Entropy#Python:_More_succinct_version
     def entropy(data: str) -> float:
@@ -60,9 +62,14 @@ def convert(text: str, min_len: int = None, max_entropy: float = None) -> List[B
     if max_entropy and entropy(raw_text) > max_entropy:
         return []
 
+    if max_len and len(raw_text) > max_len:
+        raw_text = raw_text[0:max_len] + "…"
+
     return pandoc.read(raw_text)[1]
 
 
+MIN_DESC_LEN = 15
+MAX_DESC_LEN = 200
 MIN_ARTICLE_LEN = 500
 MAX_ARTICLE_ENTROPY = 5.05
 
@@ -216,9 +223,11 @@ for date, chan, title, desc, location, eid, tags in reversed(sorted(news, key=la
             )
         )
         if desc:
-            content.append(RawBlock(Format("tex"), "\\begin{multicols}{2}"))
-            content.append(Para([Str(desc)]))
-            content.append(RawBlock(Format("tex"), "\\end{multicols}"))
+            desc_md = convert(desc, min_len=MIN_DESC_LEN, max_len=MAX_DESC_LEN)
+            if desc_md:
+                content.append(RawBlock(Format("tex"), "\\begin{multicols}{2}"))
+                content.extend(desc_md)
+                content.append(RawBlock(Format("tex"), "\\end{multicols}"))
         index += 1
 
     has_content = False  # pylint: disable=invalid-name
