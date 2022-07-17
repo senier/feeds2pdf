@@ -54,7 +54,7 @@ def convert(
     converter = html2text.HTML2Text()
     converter.ignore_images = True
     converter.bypass_tables = True
-    raw_text = converter.handle(text)
+    raw_text = converter.handle(text).replace("\\", "/")
 
     if min_len and len(raw_text) <= min_len:
         return []
@@ -115,8 +115,14 @@ args = parser.parse_args()
 news = []
 
 for url in args.urls:
+
     status(args.quiet, f"Retrieving feed from {url}")
-    doc = feedparser.parse(url)
+    try:
+        doc = feedparser.parse(url)
+    except UnicodeEncodeError as e:
+        status(args.quiet, f"Error retrieving {url}: {e}")
+        continue
+
     for entry in doc.entries:
 
         tags = [tag.term for tag in entry.tags] if "tags" in entry else []
@@ -198,7 +204,7 @@ for date, chan, title, desc, location, eid, tags in reversed(sorted(news, key=la
                 full.extend(summary_md)
                 full.append(RawBlock(Format("tex"), "\\end{multicols}"))
                 full.append(Para([lnk("[Back]", str(index)), TOP_LINK, source_link]))
-    except (urllib.error.HTTPError, urllib.error.URLError):
+    except Exception:  # pylint: disable=broad-except
         status(args.quiet, "E", end="", flush=True)
 
     if has_content:
@@ -269,4 +275,7 @@ doc = Pandoc(
     ),
     content,
 )
-pandoc.write(doc, file=args.output[0], format="pdf", options=["--pdf-engine=xelatex"])
+try:
+    pandoc.write(doc, file=args.output[0], format="pdf", options=["--pdf-engine=xelatex"])
+except Exception as e:  # pylint: disable=broad-except
+    raise Exception(f"Error: {e}\n{doc}\n") from e
