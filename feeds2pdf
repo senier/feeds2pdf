@@ -130,7 +130,10 @@ for url in args.urls:
         elif "created_parsed" in entry:
             date_parsed = entry.created_parsed
         else:
-            date_parsed = doc.updated_parsed
+            try:
+                date_parsed = doc.updated_parsed
+            except AttributeError:
+                date_parsed = time.gmtime()
         assert date_parsed is not None
 
         news.append(
