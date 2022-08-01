@@ -140,7 +140,8 @@ for url in args.urls:
                 date_parsed = doc.updated_parsed
             except AttributeError:
                 date_parsed = time.gmtime()
-        assert date_parsed is not None
+
+        date_parsed = date_parsed or time.gmtime()
 
         news.append(
             (
